@@ -1,29 +1,29 @@
 const express = require("express");
 const http = require("http");
-const fs = require("fs");
-const path = require("path");
 const WebSocket = require("ws");
 
 const app = express();
 app.use(express.text({ limit: "1mb" }));
 
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || "./data";
-const DB_FILE = path.join(DATA_DIR, "database.json");
+const FIREBASE_URL = "https://zenvyrix-finder-users-default-rtdb.asia-southeast1.firebasedatabase.app"; 
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-function getDB() {
+async function getUsers() {
     try {
-        if (fs.existsSync(DB_FILE)) {
-            return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-        }
-    } catch (e) {}
-    return { users: [] };
+        const res = await fetch(`${FIREBASE_URL}/users.json`);
+        const data = await res.json();
+        return data ? Object.values(data) : [];
+    } catch (e) {
+        return [];
+    }
 }
 
-function saveDB(data) {
+async function saveUser(name) {
     try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+        await fetch(`${FIREBASE_URL}/users.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(name)
+        });
     } catch (e) {}
 }
 
@@ -38,31 +38,32 @@ app.post("/logs", (req, res) => {
     res.send("ok");
 });
 
-app.post("/usernames", (req, res) => {
+app.post("/usernames", async (req, res) => {
     const name = (req.body || "").toString().trim();
-    const db = getDB();
-    if (name && !db.users.includes(name)) {
-        db.users.push(name);
-        saveDB(db);
-        console.log("[USER]", name);
+    if (name) {
+        const users = await getUsers();
+        if (!users.includes(name)) {
+            await saveUser(name);
+            console.log("[USER CADASTRADO]", name);
+        }
     }
     res.send("ok");
 });
 
-app.get("/usernames", (req, res) => {
-    const db = getDB();
-    res.type("text/plain").send(db.users.join("\n"));
+app.get("/usernames", async (req, res) => {
+    const users = await getUsers();
+    res.type("text/plain").send(users.join("\n"));
 });
 
-app.get("/", (req, res) => {
-    const db = getDB();
+app.get("/", async (req, res) => {
+    const users = await getUsers();
     res.send(`
         <body style="background:#0a0b10; color:#fff; font-family:sans-serif; padding:20px;">
-            <h1 style="color:#6e50ff;">Zenvyrix Finder API</h1>
+            <h1 style="color:#6e50ff;">Zenvyrix Finder (Users API)</h1>
             <p style="color:#14dc82;">Status: <b>Online</b></p>
             <hr style="border-color:#333;">
-            <h3>Usuários Registrados (${db.users.length})</h3>
-            <pre style="background:#1e2332; padding:10px; border-radius:8px;">${db.users.join("\n") || "Nenhum usuário ainda"}</pre>
+            <h3>Usuários Salvos no Firebase (${users.length})</h3>
+            <pre style="background:#1e2332; padding:10px; border-radius:8px;">${users.join("\n") || "Nenhum usuário ainda"}</pre>
         </body>
     `);
 });
@@ -77,5 +78,5 @@ wss.on("connection", (ws) => {
 });
 
 server.listen(process.env.PORT || 3000, () => {
-    console.log("Zenvyrix Finder rodando na porta", process.env.PORT || 3000);
+    console.log("Servidor rodando na porta", process.env.PORT || 3000);
 });
